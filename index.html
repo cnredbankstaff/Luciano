@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trash Dash</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    * {
+      font-family: 'Fredoka', sans-serif;
+    }
+    .player {
+      transition: left 0.1s ease, top 0.1s ease;
+    }
+    .trash-item {
+      animation: float 2s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+    }
+    @keyframes collect {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    .collected {
+      animation: collect 0.3s forwards;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    .bin-pulse {
+      animation: pulse 1s ease-in-out infinite;
+    }
+    .furniture {
+      position: absolute;
+      pointer-events: none;
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full overflow-auto">
+  <div id="app" class="h-full w-full flex flex-col" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);"><!-- Header -->
+   <div class="p-4 text-center" style="background: rgba(120, 53, 15, 0.9);">
+    <h1 id="game-title" class="text-3xl font-bold text-amber-100 drop-shadow-lg">🏠 Trash Dash 🗑️</h1>
+    <p id="instructions" class="text-amber-200 text-sm mt-1">Use arrow keys or WASD to move • Collect trash • Bring to bin!</p>
+   </div><!-- Stats Bar -->
+   <div class="flex justify-center gap-6 p-3" style="background: rgba(180, 83, 9, 0.8);">
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">🗑️</span> <span class="text-amber-100 font-semibold">Collected: <span id="collected-count">0</span>/<span id="total-trash">0</span></span>
+    </div>
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">⏱️</span> <span class="text-amber-100 font-semibold">Time: <span id="timer">0</span>s</span>
+    </div>
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">🎒</span> <span class="text-amber-100 font-semibold">Carrying: <span id="carrying">0</span>/3</span>
+    </div>
+   </div><!-- Game Area -->
+   <div class="flex-1 relative overflow-hidden" id="game-container"><!-- House Floor -->
+    <div class="absolute inset-0" style="background: repeating-linear-gradient(90deg, #d4a574 0px, #c9976a 20px, #d4a574 40px);"></div><!-- Rooms dividers -->
+    <div class="absolute top-0 left-1/3 w-3 h-full" style="background: #8B4513;"></div>
+    <div class="absolute top-0 left-2/3 w-3 h-full" style="background: #8B4513;"></div>
+    <div class="absolute top-1/2 left-0 w-1/3 h-3" style="background: #8B4513;"></div><!-- Room Labels -->
+    <div class="absolute top-2 left-4 bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-sm font-semibold">
+     🛋️ Living Room
+    </div>
+    <div class="absolute top-2 left-[36%] bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-sm font-semibold">
+     🍳 Kitchen
+    </div>
+    <div class="absolute top-2 left-[69%] bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-sm font-semibold">
+     🛏️ Bedroom
+    </div>
+    <div class="absolute top-[54%] left-4 bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-sm font-semibold">
+     🚿 Bathroom
+    </div><!-- Furniture -->
+    <div id="furniture-container"></div><!-- Trash Bin -->
+    <div id="trash-bin" class="absolute cursor-pointer z-20" style="font-size: 50px; left: 50%; top: 85%; transform: translateX(-50%);">
+     🗑️ 
+     <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs px-2 py-1 rounded whitespace-nowrap font-semibold">
+      DROP HERE
+     </div>
+    </div><!-- Trash Items Container -->
+    <div id="trash-container"></div><!-- Player -->
+    <div id="player" class="player absolute z-30" style="font-size: 40px; left: 50%; top: 50%;">
+     🧑 
+     <div id="bag-indicator" class="absolute -top-2 -right-2 bg-orange-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold hidden">
+      0
+     </div>
+    </div>
+   </div><!-- Game Over / Win Screen -->
+   <div id="game-message" class="hidden absolute inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="bg-gradient-to-br from-amber-100 to-amber-200 p-8 rounded-2xl text-center shadow-2xl max-w-md mx-4">
+     <div id="message-emoji" class="text-6xl mb-4">
+      🎉
+     </div>
+     <h2 id="message-title" class="text-3xl font-bold text-amber-900 mb-2">House Cleaned!</h2>
+     <p id="message-text" class="text-amber-700 mb-4">You cleaned up all the trash!</p>
+     <p id="final-time" class="text-xl font-semibold text-amber-800 mb-6">Time: 0 seconds</p><button id="restart-btn" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-8 rounded-full text-lg shadow-lg transition-all"> 🔄 Play Again </button>
+    </div>
+   </div><!-- Mobile Controls -->
+   <div class="p-4 flex justify-center gap-2 md:hidden" style="background: rgba(120, 53, 15, 0.9);">
+    <div class="grid grid-cols-3 gap-1">
+     <div></div><button id="btn-up" class="bg-amber-600 hover:bg-amber-500 text-white w-12 h-12 rounded-lg text-2xl active:scale-95 transition-transform">↑</button>
+     <div></div><button id="btn-left" class="bg-amber-600 hover:bg-amber-500 text-white w-12 h-12 rounded-lg text-2xl active:scale-95 transition-transform">←</button> <button id="btn-down" class="bg-amber-600 hover:bg-amber-500 text-white w-12 h-12 rounded-lg text-2xl active:scale-95 transition-transform">↓</button> <button id="btn-right" class="bg-amber-600 hover:bg-amber-500 text-white w-12 h-12 rounded-lg text-2xl active:scale-95 transition-transform">→</button>
+    </div>
+   </div>
+  </div>
+  <script>
+    const defaultConfig = {
+      game_title: '🏠 Trash Dash 🗑️',
+      instructions_text: 'Use arrow keys or WASD to move • Collect trash • Bring to bin!',
+      primary_color: '#78350f',
+      secondary_color: '#fde68a',
+      text_color: '#fef3c7',
+      accent_color: '#22c55e',
+      surface_color: '#b45309'
+    };
+
+    let config = { ...defaultConfig };
+
+    // Game state
+    let playerX = 50;
+    let playerY = 50;
+    let carrying = [];
+    let collectedCount = 0;
+    let totalTrash = 0;
+    let gameTime = 0;
+    let gameInterval = null;
+    let trashItems = [];
+    const MAX_CARRY = 3;
+    const MOVE_SPEED = 1.5;
+
+    const trashTypes = [
+      { emoji: '📰', name: 'newspaper' },
+      { emoji: '🥤', name: 'cup' },
+      { emoji: '🍕', name: 'pizza box' },
+      { emoji: '📦', name: 'box' },
+      { emoji: '🧴', name: 'bottle' },
+      { emoji: '🥡', name: 'takeout' },
+      { emoji: '🧻', name: 'paper' },
+      { emoji: '🍌', name: 'banana peel' },
+      { emoji: '🥫', name: 'can' },
+      { emoji: '👟', name: 'old shoe' }
+    ];
+
+    const furniture = [
+      { emoji: '🛋️', x: 10, y: 25, size: 60 },
+      { emoji: '📺', x: 20, y: 15, size: 40 },
+      { emoji: '🪴', x: 5, y: 40, size: 35 },
+      { emoji: '🍳', x: 45, y: 20, size: 35 },
+      { emoji: '🧊', x: 55, y: 30, size: 50 },
+      { emoji: '🛏️', x: 75, y: 25, size: 70 },
+      { emoji: '💡', x: 85, y: 15, size: 30 },
+      { emoji: '🚿', x: 15, y: 70, size: 40 },
+      { emoji: '🚽', x: 8, y: 80, size: 35 },
+      { emoji: '🪥', x: 25, y: 65, size: 25 }
+    ];
+
+    function initGame() {
+      const container = document.getElementById('trash-container');
+      const furnitureContainer = document.getElementById('furniture-container');
+      container.innerHTML = '';
+      furnitureContainer.innerHTML = '';
+      carrying = [];
+      collectedCount = 0;
+      gameTime = 0;
+      playerX = 50;
+      playerY = 50;
+      trashItems = [];
+
+      // Place furniture
+      furniture.forEach(f => {
+        const el = document.createElement('div');
+        el.className = 'furniture';
+        el.style.left = f.x + '%';
+        el.style.top = f.y + '%';
+        el.style.fontSize = f.size + 'px';
+        el.textContent = f.emoji;
+        furnitureContainer.appendChild(el);
+      });
+
+      // Generate random trash positions
+      const trashPositions = [
+        { x: 8, y: 30 }, { x: 22, y: 35 }, { x: 15, y: 20 },
+        { x: 40, y: 15 }, { x: 50, y: 35 }, { x: 58, y: 20 },
+        { x: 72, y: 30 }, { x: 85, y: 35 }, { x: 78, y: 18 },
+        { x: 12, y: 75 }, { x: 22, y: 85 }, { x: 18, y: 60 }
+      ];
+
+      totalTrash = trashPositions.length;
+
+      trashPositions.forEach((pos, index) => {
+        const trashType = trashTypes[Math.floor(Math.random() * trashTypes.length)];
+        const trashEl = document.createElement('div');
+        trashEl.className = 'trash-item absolute cursor-pointer z-10 transition-all';
+        trashEl.style.left = pos.x + '%';
+        trashEl.style.top = pos.y + '%';
+        trashEl.style.fontSize = '30px';
+        trashEl.textContent = trashType.emoji;
+        trashEl.dataset.id = index;
+        trashEl.dataset.collected = 'false';
+
+        trashItems.push({
+          id: index,
+          x: pos.x,
+          y: pos.y,
+          element: trashEl,
+          collected: false
+        });
+
+        container.appendChild(trashEl);
+      });
+
+      updateUI();
+      updatePlayerPosition();
+
+      if (gameInterval) clearInterval(gameInterval);
+      gameInterval = setInterval(() => {
+        gameTime++;
+        document.getElementById('timer').textContent = gameTime;
+      }, 1000);
+
+      document.getElementById('game-message').classList.add('hidden');
+    }
+
+    function updateUI() {
+      document.getElementById('collected-count').textContent = collectedCount;
+      document.getElementById('total-trash').textContent = totalTrash;
+      document.getElementById('carrying').textContent = carrying.length;
+      
+      const bagIndicator = document.getElementById('bag-indicator');
+      if (carrying.length > 0) {
+        bagIndicator.classList.remove('hidden');
+        bagIndicator.textContent = carrying.length;
+      } else {
+        bagIndicator.classList.add('hidden');
+      }
+    }
+
+    function updatePlayerPosition() {
+      const player = document.getElementById('player');
+      player.style.left = playerX + '%';
+      player.style.top = playerY + '%';
+      checkCollisions();
+    }
+
+    function checkCollisions() {
+      const binEl = document.getElementById('trash-bin');
+      const binX = 50;
+      const binY = 85;
+
+      // Check trash bin collision
+      if (carrying.length > 0) {
+        const distToBin = Math.sqrt(Math.pow(playerX - binX, 2) + Math.pow(playerY - binY, 2));
+        if (distToBin < 8) {
+          collectedCount += carrying.length;
+          carrying = [];
+          binEl.classList.add('bin-pulse');
+          setTimeout(() => binEl.classList.remove('bin-pulse'), 500);
+          updateUI();
+          checkWin();
+        }
+      }
+
+      // Check trash collection
+      if (carrying.length < MAX_CARRY) {
+        trashItems.forEach(trash => {
+          if (!trash.collected) {
+            const dist = Math.sqrt(Math.pow(playerX - trash.x, 2) + Math.pow(playerY - trash.y, 2));
+            if (dist < 6) {
+              trash.collected = true;
+              trash.element.classList.add('collected');
+              carrying.push(trash.id);
+              updateUI();
+            }
+          }
+        });
+      }
+    }
+
+    function checkWin() {
+      if (collectedCount >= totalTrash) {
+        clearInterval(gameInterval);
+        document.getElementById('message-emoji').textContent = '🎉';
+        document.getElementById('message-title').textContent = 'House Cleaned!';
+        document.getElementById('message-text').textContent = 'Amazing! You cleaned up all the trash!';
+        document.getElementById('final-time').textContent = 'Time: ' + gameTime + ' seconds';
+        document.getElementById('game-message').classList.remove('hidden');
+      }
+    }
+
+    function movePlayer(dx, dy) {
+      const newX = Math.max(3, Math.min(95, playerX + dx));
+      const newY = Math.max(8, Math.min(90, playerY + dy));
+      playerX = newX;
+      playerY = newY;
+      updatePlayerPosition();
+    }
+
+    // Keyboard controls
+    const keys = {};
+    document.addEventListener('keydown', (e) => {
+      keys[e.key.toLowerCase()] = true;
+      e.preventDefault();
+    });
+    document.addEventListener('keyup', (e) => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+    function gameLoop() {
+      let dx = 0, dy = 0;
+      if (keys['arrowup'] || keys['w']) dy = -MOVE_SPEED;
+      if (keys['arrowdown'] || keys['s']) dy = MOVE_SPEED;
+      if (keys['arrowleft'] || keys['a']) dx = -MOVE_SPEED;
+      if (keys['arrowright'] || keys['d']) dx = MOVE_SPEED;
+      if (dx !== 0 || dy !== 0) movePlayer(dx, dy);
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Mobile controls
+    document.getElementById('btn-up').addEventListener('click', () => movePlayer(0, -MOVE_SPEED * 2));
+    document.getElementById('btn-down').addEventListener('click', () => movePlayer(0, MOVE_SPEED * 2));
+    document.getElementById('btn-left').addEventListener('click', () => movePlayer(-MOVE_SPEED * 2, 0));
+    document.getElementById('btn-right').addEventListener('click', () => movePlayer(MOVE_SPEED * 2, 0));
+
+    document.getElementById('restart-btn').addEventListener('click', initGame);
+
+    // Element SDK
+    async function onConfigChange(cfg) {
+      config = { ...defaultConfig, ...cfg };
+      document.getElementById('game-title').textContent = config.game_title || defaultConfig.game_title;
+      document.getElementById('instructions').textContent = config.instructions_text || defaultConfig.instructions_text;
+    }
+
+    function mapToCapabilities(cfg) {
+      return {
+        recolorables: [
+          {
+            get: () => cfg.primary_color || defaultConfig.primary_color,
+            set: (v) => { cfg.primary_color = v; window.elementSdk.setConfig({ primary_color: v }); }
+          },
+          {
+            get: () => cfg.secondary_color || defaultConfig.secondary_color,
+            set: (v) => { cfg.secondary_color = v; window.elementSdk.setConfig({ secondary_color: v }); }
+          },
+          {
+            get: () => cfg.text_color || defaultConfig.text_color,
+            set: (v) => { cfg.text_color = v; window.elementSdk.setConfig({ text_color: v }); }
+          },
+          {
+            get: () => cfg.accent_color || defaultConfig.accent_color,
+            set: (v) => { cfg.accent_color = v; window.elementSdk.setConfig({ accent_color: v }); }
+          },
+          {
+            get: () => cfg.surface_color || defaultConfig.surface_color,
+            set: (v) => { cfg.surface_color = v; window.elementSdk.setConfig({ surface_color: v }); }
+          }
+        ],
+        borderables: [],
+        fontEditable: undefined,
+        fontSizeable: undefined
+      };
+    }
+
+    function mapToEditPanelValues(cfg) {
+      return new Map([
+        ['game_title', cfg.game_title || defaultConfig.game_title],
+        ['instructions_text', cfg.instructions_text || defaultConfig.instructions_text]
+      ]);
+    }
+
+    if (window.elementSdk) {
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange,
+        mapToCapabilities,
+        mapToEditPanelValues
+      });
+    }
+
+    // Initialize game
+    initGame();
+    gameLoop();
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c6ac6c0c78ac4fb',t:'MTc2OTg3ODk0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
