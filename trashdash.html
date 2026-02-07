@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trash Dash</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    * {
+      font-family: 'Fredoka', sans-serif;
+    }
+    .player {
+      transition: left 0.08s ease-out, top 0.08s ease-out;
+      z-index: 50;
+    }
+    .trash-item {
+      animation: float 2s ease-in-out infinite;
+      cursor: pointer;
+      z-index: 10;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+    }
+    @keyframes collect {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    .collected {
+      animation: collect 0.3s forwards;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    .bin-pulse {
+      animation: pulse 0.8s ease-in-out infinite;
+    }
+    @keyframes celebrate {
+      0% { transform: scale(1) rotate(0deg); }
+      25% { transform: scale(1.2) rotate(-10deg); }
+      50% { transform: scale(1.3) rotate(10deg); }
+      75% { transform: scale(1.2) rotate(-5deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    .celebrate {
+      animation: celebrate 0.5s ease-in-out;
+    }
+    .furniture {
+      position: absolute;
+      pointer-events: none;
+      z-index: 5;
+    }
+    @keyframes confetti {
+      0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100px) rotate(720deg); opacity: 0; }
+    }
+    .confetti {
+      position: absolute;
+      animation: confetti 1s ease-out forwards;
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full overflow-auto">
+  <div id="app" class="h-full w-full flex flex-col" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);"><!-- Header -->
+   <div class="p-4 text-center" style="background: rgba(120, 53, 15, 0.9);">
+    <h1 id="game-title" class="text-3xl font-bold text-amber-100 drop-shadow-lg">🏠 Trash Dash 🗑️</h1>
+    <p id="instructions" class="text-amber-200 text-sm mt-1">Use arrow keys or WASD to move • Collect trash • Bring to bin!</p>
+   </div><!-- Stats Bar -->
+   <div class="flex justify-center gap-4 p-3 flex-wrap" style="background: rgba(180, 83, 9, 0.8);">
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">📍</span> <span class="text-amber-100 font-semibold">Level: <span id="current-level">1</span>/<span id="max-level">3</span></span>
+    </div>
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">🗑️</span> <span class="text-amber-100 font-semibold">Deposited: <span id="deposited-count">0</span>/<span id="total-trash">8</span></span>
+    </div>
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">⏱️</span> <span class="text-amber-100 font-semibold">Time: <span id="timer">0</span>s</span>
+    </div>
+    <div class="flex items-center gap-2 bg-amber-900/50 px-4 py-2 rounded-full"><span class="text-2xl">🎒</span> <span class="text-amber-100 font-semibold">Carrying: <span id="carrying">0</span>/3</span>
+    </div>
+   </div><!-- Game Area -->
+   <div class="flex-1 relative overflow-hidden" id="game-container" style="min-height: 400px;"><!-- House Floor -->
+    <div class="absolute inset-0" style="background: repeating-linear-gradient(90deg, #d4a574 0px, #c9976a 20px, #d4a574 40px);"></div><!-- Room dividers -->
+    <div class="absolute top-0 left-1/3 w-1 h-full" style="background: #8B4513;"></div>
+    <div class="absolute top-0 left-2/3 w-1 h-full" style="background: #8B4513;"></div>
+    <div class="absolute top-1/2 left-0 w-1/3 h-1" style="background: #8B4513;"></div><!-- Room Labels -->
+    <div class="absolute top-2 left-4 bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-xs font-semibold z-30">
+     🛋️ Living Room
+    </div>
+    <div class="absolute top-2 left-[36%] bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-xs font-semibold z-30">
+     🍳 Kitchen
+    </div>
+    <div class="absolute top-2 left-[69%] bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-xs font-semibold z-30">
+     🛏️ Bedroom
+    </div>
+    <div class="absolute top-[53%] left-4 bg-amber-800/80 text-amber-100 px-3 py-1 rounded-lg text-xs font-semibold z-30">
+     🚿 Bathroom
+    </div><!-- Furniture -->
+    <div id="furniture-container"></div><!-- Trash Items Container -->
+    <div id="trash-container"></div><!-- Trash Bin -->
+    <div id="trash-bin" class="absolute cursor-pointer z-20" style="font-size: 48px; left: 48%; top: 82%;"><span id="bin-emoji">🗑️</span>
+    </div><!-- Player -->
+    <div id="player" class="player absolute" style="font-size: 40px; left: 50%; top: 50%;">
+     🧑
+    </div><!-- Win Screen -->
+    <div id="win-screen" class="absolute inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+     <div class="bg-amber-100 p-8 rounded-2xl text-center shadow-2xl transform scale-0 transition-transform duration-300" id="win-card">
+      <div class="text-6xl mb-4">
+       🎉
+      </div>
+      <h2 class="text-3xl font-bold text-amber-800 mb-2">Level <span id="completed-level">1</span> Complete!</h2>
+      <p class="text-amber-700 text-lg mb-4">You cleaned up in <span id="final-time">0</span> seconds!</p>
+      <div id="level-buttons" class="flex gap-4 justify-center"><button id="next-level-btn" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-8 rounded-full text-lg transition-colors"> Next Level ➡️ </button> <button id="restart-btn" class="bg-amber-700 hover:bg-amber-800 text-white font-bold py-3 px-8 rounded-full text-lg transition-colors"> Restart 🔄 </button>
+      </div>
+     </div>
+    </div><!-- Game Over Screen -->
+    <div id="game-over-screen" class="absolute inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+     <div class="bg-amber-100 p-8 rounded-2xl text-center shadow-2xl transform scale-0 transition-transform duration-300" id="game-over-card">
+      <div class="text-6xl mb-4">
+       🏆
+      </div>
+      <h2 class="text-3xl font-bold text-amber-800 mb-2">All Levels Complete!</h2>
+      <p class="text-amber-700 text-lg mb-4">Total Time: <span id="total-time">0</span> seconds</p>
+      <p class="text-amber-600 text-sm mb-6">You're a master cleaner!</p><button id="play-from-start" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-8 rounded-full text-lg transition-colors"> Play Again 🏠 </button>
+     </div>
+    </div><!-- Start Screen -->
+    <div id="start-screen" class="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+     <div class="bg-amber-100 p-8 rounded-2xl text-center shadow-2xl">
+      <div class="text-6xl mb-4">
+       🏠🗑️
+      </div>
+      <h2 class="text-3xl font-bold text-amber-800 mb-2">Trash Dash</h2>
+      <p class="text-amber-700 mb-4">Clean up the house!<br>
+       Collect trash and bring it to the bin.</p>
+      <p class="text-amber-600 text-sm mb-4">Capacity: 3 items at a time</p><button id="start-btn" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-8 rounded-full text-lg transition-colors"> Start Game 🎮 </button>
+     </div>
+    </div>
+   </div><!-- Mobile Controls -->
+   <div class="p-4 flex justify-center gap-2 md:hidden" style="background: rgba(120, 53, 15, 0.9);">
+    <div class="grid grid-cols-3 gap-1">
+     <div></div><button class="mobile-btn bg-amber-700 hover:bg-amber-600 text-white p-3 rounded-lg text-2xl" data-dir="up">⬆️</button>
+     <div></div><button class="mobile-btn bg-amber-700 hover:bg-amber-600 text-white p-3 rounded-lg text-2xl" data-dir="left">⬅�����</button> <button class="mobile-btn bg-amber-700 hover:bg-amber-600 text-white p-3 rounded-lg text-2xl" data-dir="down">⬇️</button> <button class="mobile-btn bg-amber-700 hover:bg-amber-600 text-white p-3 rounded-lg text-2xl" data-dir="right">➡️</button>
+    </div>
+   </div>
+  </div>
+  <script>
+    const defaultConfig = {
+      game_title: "🏠 Trash Dash 🗑️",
+      instructions_text: "Use arrow keys or WASD to move • Collect trash • Bring to bin!",
+      level_count: "3",
+      background_color: "#fef3c7",
+      header_color: "#78350f",
+      accent_color: "#b45309",
+      text_color: "#fef3c7",
+      button_color: "#d97706"
+    };
+
+    let config = { ...defaultConfig };
+
+    // Level configurations
+    const levelConfigs = {
+      1: { trashCount: 8, maxCarry: 3, speed: 1.0 },
+      2: { trashCount: 12, maxCarry: 3, speed: 1.2 },
+      3: { trashCount: 18, maxCarry: 3, speed: 1.4 }
+    };
+
+    // Game state
+    let gameState = {
+      currentLevel: 1,
+      maxLevels: 3,
+      playerX: 50,
+      playerY: 50,
+      carrying: [],
+      maxCarry: 3,
+      deposited: 0,
+      levelTrashCount: 8,
+      totalTime: 0,
+      levelTime: 0,
+      timerInterval: null,
+      gameStarted: false,
+      levelWon: false,
+      keysPressed: {},
+      speedMultiplier: 1.0
+    };
+
+    // Trash items with positions (will be expanded for levels)
+    let trashItems = [];
+    
+    function generateTrashItems(count) {
+      const baseTrash = [
+        { emoji: "📰", room: "living" },
+        { emoji: "🥤", room: "living" },
+        { emoji: "🍕", room: "kitchen" },
+        { emoji: "🥡", room: "kitchen" },
+        { emoji: "👕", room: "bedroom" },
+        { emoji: "📦", room: "bedroom" },
+        { emoji: "🧴", room: "bathroom" },
+        { emoji: "🧻", room: "bathroom" },
+        { emoji: "🍎", room: "kitchen" },
+        { emoji: "🧦", room: "bedroom" },
+        { emoji: "📄", room: "living" },
+        { emoji: "🥫", room: "kitchen" },
+        { emoji: "📕", room: "living" },
+        { emoji: "🎽", room: "bedroom" },
+        { emoji: "🧼", room: "bathroom" },
+        { emoji: "💍", room: "bedroom" }
+      ];
+      
+      const items = [];
+      for (let i = 0; i < count; i++) {
+        const trash = baseTrash[i % baseTrash.length];
+        const positions = {
+          living: [[12, 25], [22, 38], [8, 15], [18, 42]],
+          kitchen: [[45, 20], [55, 35], [38, 28], [52, 42]],
+          bedroom: [[78, 22], [88, 38], [72, 28], [85, 45]],
+          bathroom: [[15, 70], [8, 82], [20, 62], [12, 78]]
+        };
+        
+        const pos = positions[trash.room][i % positions[trash.room].length];
+        const offsetX = (Math.random() - 0.5) * 8;
+        const offsetY = (Math.random() - 0.5) * 8;
+        
+        items.push({
+          id: i + 1,
+          emoji: trash.emoji,
+          x: Math.max(5, Math.min(95, pos[0] + offsetX)),
+          y: Math.max(12, Math.min(85, pos[1] + offsetY)),
+          room: trash.room
+        });
+      }
+      return items;
+    }
+
+    // Furniture positions
+    const furniture = [
+      { emoji: "🛋️", x: 8, y: 15, size: 35 },
+      { emoji: "📺", x: 25, y: 12, size: 30 },
+      { emoji: "🪴", x: 28, y: 40, size: 25 },
+      { emoji: "🍳", x: 38, y: 15, size: 25 },
+      { emoji: "🧊", x: 58, y: 15, size: 30 },
+      { emoji: "🍽️", x: 48, y: 40, size: 25 },
+      { emoji: "🛏️", x: 75, y: 15, size: 40 },
+      { emoji: "💻", x: 90, y: 25, size: 25 },
+      { emoji: "🪑", x: 85, y: 42, size: 25 },
+      { emoji: "🚿", x: 8, y: 58, size: 30 },
+      { emoji: "🚽", x: 25, y: 75, size: 28 },
+      { emoji: "🪞", x: 20, y: 58, size: 25 }
+    ];
+
+    function initGame() {
+      renderFurniture();
+      gameState.maxLevels = parseInt(config.level_count) || 3;
+      document.getElementById('max-level').textContent = gameState.maxLevels;
+      loadLevel(1);
+    }
+
+    function loadLevel(levelNum) {
+      gameState.currentLevel = levelNum;
+      const levelCfg = levelConfigs[Math.min(levelNum, 3)] || levelConfigs[3];
+      
+      gameState.levelTrashCount = levelCfg.trashCount;
+      gameState.maxCarry = levelCfg.maxCarry;
+      gameState.speedMultiplier = levelCfg.speed;
+      gameState.playerX = 50;
+      gameState.playerY = 50;
+      gameState.carrying = [];
+      gameState.deposited = 0;
+      gameState.levelTime = 0;
+      gameState.levelWon = false;
+      gameState.gameStarted = false;
+      gameState.keysPressed = {};
+      
+      clearInterval(gameState.timerInterval);
+      
+      trashItems = generateTrashItems(gameState.levelTrashCount);
+      renderTrash();
+      updateUI();
+      
+      const player = document.getElementById('player');
+      player.style.left = '50%';
+      player.style.top = '50%';
+      
+      document.getElementById('win-screen').classList.add('hidden');
+      document.getElementById('win-card').style.transform = 'scale(0)';
+      document.getElementById('game-over-screen').classList.add('hidden');
+      document.getElementById('game-over-card').style.transform = 'scale(0)';
+      document.getElementById('start-screen').classList.remove('hidden');
+    }
+
+    function renderFurniture() {
+      const container = document.getElementById('furniture-container');
+      container.innerHTML = furniture.map(f => 
+        `<div class="furniture" style="left: ${f.x}%; top: ${f.y}%; font-size: ${f.size}px;">${f.emoji}</div>`
+      ).join('');
+    }
+
+    function renderTrash() {
+      const container = document.getElementById('trash-container');
+      container.innerHTML = trashItems.map(t => 
+        `<div class="trash-item absolute cursor-pointer" id="trash-${t.id}" 
+             style="left: ${t.x}%; top: ${t.y}%; font-size: 28px;" 
+             data-id="${t.id}">${t.emoji}</div>`
+      ).join('');
+
+      document.querySelectorAll('.trash-item').forEach(el => {
+        el.addEventListener('click', () => tryCollectTrash(parseInt(el.dataset.id)));
+      });
+    }
+
+    function updateUI() {
+      document.getElementById('current-level').textContent = gameState.currentLevel;
+      document.getElementById('deposited-count').textContent = gameState.deposited;
+      document.getElementById('total-trash').textContent = gameState.levelTrashCount;
+      document.getElementById('carrying').textContent = gameState.carrying.length;
+      document.getElementById('timer').textContent = gameState.levelTime;
+      
+      const bin = document.getElementById('trash-bin');
+      if (gameState.carrying.length > 0) {
+        bin.classList.add('bin-pulse');
+      } else {
+        bin.classList.remove('bin-pulse');
+      }
+    }
+
+    function movePlayer(dx, dy) {
+      if (!gameState.gameStarted || gameState.levelWon) return;
+      
+      const adjustedDx = dx * gameState.speedMultiplier;
+      const adjustedDy = dy * gameState.speedMultiplier;
+      
+      const newX = Math.max(2, Math.min(95, gameState.playerX + adjustedDx));
+      const newY = Math.max(8, Math.min(92, gameState.playerY + adjustedDy));
+      
+      gameState.playerX = newX;
+      gameState.playerY = newY;
+      
+      const player = document.getElementById('player');
+      player.style.left = newX + '%';
+      player.style.top = newY + '%';
+      
+      checkCollisions();
+    }
+
+    function checkCollisions() {
+      trashItems.forEach(trash => {
+        const el = document.getElementById(`trash-${trash.id}`);
+        if (!el || el.classList.contains('collected')) return;
+        
+        const distance = Math.sqrt(
+          Math.pow(gameState.playerX - trash.x, 2) + 
+          Math.pow(gameState.playerY - trash.y, 2)
+        );
+        
+        if (distance < 8) {
+          tryCollectTrash(trash.id);
+        }
+      });
+      
+      const binX = 48;
+      const binY = 82;
+      const binDistance = Math.sqrt(
+        Math.pow(gameState.playerX - binX, 2) + 
+        Math.pow(gameState.playerY - binY, 2)
+      );
+      
+      if (binDistance < 10 && gameState.carrying.length > 0) {
+        depositTrash();
+      }
+    }
+
+    function tryCollectTrash(id) {
+      if (gameState.carrying.length >= gameState.maxCarry) return;
+      if (gameState.carrying.includes(id)) return;
+      
+      const el = document.getElementById(`trash-${id}`);
+      if (!el || el.classList.contains('collected')) return;
+      
+      gameState.carrying.push(id);
+      el.classList.add('collected');
+      
+      setTimeout(() => {
+        el.style.display = 'none';
+      }, 300);
+      
+      updateUI();
+    }
+
+    function depositTrash() {
+      if (gameState.carrying.length === 0) return;
+      
+      const bin = document.getElementById('trash-bin');
+      bin.classList.add('celebrate');
+      setTimeout(() => bin.classList.remove('celebrate'), 500);
+      
+      createConfetti();
+      
+      gameState.deposited += gameState.carrying.length;
+      gameState.carrying = [];
+      
+      updateUI();
+      
+      if (gameState.deposited >= gameState.levelTrashCount) {
+        levelComplete();
+      }
+    }
+
+    function createConfetti() {
+      const colors = ['🟡', '🟠', '🔵', '🟢', '🔴', '⭐'];
+      const container = document.getElementById('game-container');
+      
+      for (let i = 0; i < 8; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.textContent = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.left = (45 + Math.random() * 15) + '%';
+        confetti.style.top = '75%';
+        confetti.style.fontSize = '20px';
+        confetti.style.zIndex = '100';
+        container.appendChild(confetti);
+        
+        setTimeout(() => confetti.remove(), 1000);
+      }
+    }
+
+    function levelComplete() {
+      gameState.levelWon = true;
+      clearInterval(gameState.timerInterval);
+      gameState.totalTime += gameState.levelTime;
+      
+      document.getElementById('completed-level').textContent = gameState.currentLevel;
+      document.getElementById('final-time').textContent = gameState.levelTime;
+      
+      if (gameState.currentLevel >= gameState.maxLevels) {
+        // All levels complete
+        setTimeout(() => {
+          document.getElementById('win-screen').classList.add('hidden');
+          document.getElementById('game-over-screen').classList.remove('hidden');
+          setTimeout(() => {
+            document.getElementById('game-over-card').style.transform = 'scale(1)';
+          }, 100);
+          document.getElementById('total-time').textContent = gameState.totalTime;
+        }, 500);
+      } else {
+        // Show next level button
+        document.getElementById('win-screen').classList.remove('hidden');
+        document.getElementById('next-level-btn').style.display = 'inline-block';
+        setTimeout(() => {
+          document.getElementById('win-card').style.transform = 'scale(1)';
+        }, 100);
+      }
+    }
+
+    function startGame() {
+      document.getElementById('start-screen').classList.add('hidden');
+      gameState.gameStarted = true;
+      gameState.timerInterval = setInterval(() => {
+        gameState.levelTime++;
+        updateUI();
+      }, 1000);
+    }
+
+    function nextLevel() {
+      if (gameState.currentLevel < gameState.maxLevels) {
+        loadLevel(gameState.currentLevel + 1);
+        startGame();
+      }
+    }
+
+    function restartLevel() {
+      loadLevel(gameState.currentLevel);
+    }
+
+    function restartFromStart() {
+      loadLevel(1);
+    }
+
+    function setupControls() {
+      document.addEventListener('keydown', (e) => {
+        if (gameState.keysPressed[e.key]) return;
+        gameState.keysPressed[e.key] = true;
+        
+        const speed = 4;
+        switch(e.key.toLowerCase()) {
+          case 'arrowup': case 'w': movePlayer(0, -speed); break;
+          case 'arrowdown': case 's': movePlayer(0, speed); break;
+          case 'arrowleft': case 'a': movePlayer(-speed, 0); break;
+          case 'arrowright': case 'd': movePlayer(speed, 0); break;
+        }
+      });
+      
+      document.addEventListener('keyup', (e) => {
+        gameState.keysPressed[e.key] = false;
+      });
+      
+      setInterval(() => {
+        if (!gameState.gameStarted || gameState.levelWon) return;
+        const speed = 2;
+        if (gameState.keysPressed['ArrowUp'] || gameState.keysPressed['w']) movePlayer(0, -speed);
+        if (gameState.keysPressed['ArrowDown'] || gameState.keysPressed['s']) movePlayer(0, speed);
+        if (gameState.keysPressed['ArrowLeft'] || gameState.keysPressed['a']) movePlayer(-speed, 0);
+        if (gameState.keysPressed['ArrowRight'] || gameState.keysPressed['d']) movePlayer(speed, 0);
+      }, 50);
+      
+      document.querySelectorAll('.mobile-btn').forEach(btn => {
+        let intervalId = null;
+        
+        const startMove = () => {
+          const dir = btn.dataset.dir;
+          const speed = 3;
+          const move = () => {
+            switch(dir) {
+              case 'up': movePlayer(0, -speed); break;
+              case 'down': movePlayer(0, speed); break;
+              case 'left': movePlayer(-speed, 0); break;
+              case 'right': movePlayer(speed, 0); break;
+            }
+          };
+          move();
+          intervalId = setInterval(move, 80);
+        };
+        
+        const stopMove = () => {
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+        };
+        
+        btn.addEventListener('mousedown', startMove);
+        btn.addEventListener('mouseup', stopMove);
+        btn.addEventListener('mouseleave', stopMove);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startMove(); });
+        btn.addEventListener('touchend', stopMove);
+      });
+      
+      document.getElementById('trash-bin').addEventListener('click', depositTrash);
+      document.getElementById('start-btn').addEventListener('click', startGame);
+      document.getElementById('next-level-btn').addEventListener('click', nextLevel);
+      document.getElementById('restart-btn').addEventListener('click', restartLevel);
+      document.getElementById('play-from-start').addEventListener('click', restartFromStart);
+    }
+
+    function applyConfig(cfg) {
+      document.getElementById('game-title').textContent = cfg.game_title || defaultConfig.game_title;
+      document.getElementById('instructions').textContent = cfg.instructions_text || defaultConfig.instructions_text;
+    }
+
+    // Initialize Element SDK
+    if (window.elementSdk) {
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange: async (newConfig) => {
+          config = { ...defaultConfig, ...newConfig };
+          applyConfig(config);
+          gameState.maxLevels = parseInt(config.level_count) || 3;
+          document.getElementById('max-level').textContent = gameState.maxLevels;
+        },
+        mapToCapabilities: (cfg) => ({
+          recolorables: [],
+          borderables: [],
+          fontEditable: undefined,
+          fontSizeable: undefined
+        }),
+        mapToEditPanelValues: (cfg) => new Map([
+          ["game_title", cfg.game_title || defaultConfig.game_title],
+          ["instructions_text", cfg.instructions_text || defaultConfig.instructions_text],
+          ["level_count", cfg.level_count || defaultConfig.level_count]
+        ])
+      });
+    }
+
+    // Initialize game
+    initGame();
+    setupControls();
+    applyConfig(config);
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9ca4996b06c3fbf2',t:'MTc3MDQ4NTI2MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
